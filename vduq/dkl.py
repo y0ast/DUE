@@ -16,6 +16,45 @@ from gpytorch.variational import (
 from sklearn import cluster
 
 
+def initial_values_for_GP(train_dataset, feature_extractor, n_inducing_points):
+    idx = torch.randperm(len(train_dataset))[:1000]
+    X_sample = torch.stack([train_dataset[i][0] for i in idx])
+
+    with torch.no_grad():
+        if torch.cuda.is_available():
+            X_sample = X_sample.cuda()
+            feature_extractor = feature_extractor.cuda()
+
+        f_X_sample = feature_extractor(X_sample).cpu().numpy()
+
+    initial_inducing_points = _get_initial_inducing_points(
+        f_X_sample, n_inducing_points
+    )
+    initial_lengthscale = _get_initial_lengthscale(f_X_sample)
+
+    return initial_inducing_points, initial_lengthscale
+
+
+def _get_initial_inducing_points(f_X_sample, n_inducing_points):
+    # Following Bradshaw 2017
+    # https://gist.github.com/john-bradshaw/e6784db56f8ae2cf13bb51eec51e9057
+    kmeans = cluster.MiniBatchKMeans(
+        n_clusters=n_inducing_points, batch_size=n_inducing_points * 10
+    )
+    kmeans.fit(f_X_sample.numpy())
+    initial_inducing_points = torch.from_numpy(kmeans.cluster_centers_)
+
+    return initial_inducing_points
+
+
+def _get_initial_lengthscale(f_X_sample):
+    initial_lengthscale = torch.pairwise_distance(f_X_sample, f_X_sample).mean()
+    # verify with
+    # initial_lengthscale2 = distance.pdist(f_X_sample, "euclidean").mean()
+
+    return initial_lengthscale
+
+
 class DKL_GP(ApproximateGP):
     def __init__(
         self,
@@ -98,29 +137,3 @@ class DKL_GP(ApproximateGP):
         for name, param in self.named_parameters():
             if "inducing_points" in name:
                 return param
-
-
-def initial_values_for_GP(train_dataset, feature_extractor, n_inducing_points):
-    idx = torch.randperm(len(train_dataset))[:1000]
-    X_sample = torch.stack([train_dataset[i][0] for i in idx])
-
-    with torch.no_grad():
-        if torch.cuda.is_available():
-            X_sample = X_sample.cuda()
-            feature_extractor = feature_extractor.cuda()
-
-        f_X_sample = feature_extractor(X_sample).cpu().numpy()
-
-    # Following Bradshaw 2017
-    # https://gist.github.com/john-bradshaw/e6784db56f8ae2cf13bb51eec51e9057
-    kmeans = cluster.MiniBatchKMeans(
-        n_clusters=n_inducing_points, batch_size=n_inducing_points * 10
-    )
-    kmeans.fit(f_X_sample.numpy())
-    initial_inducing_points = torch.from_numpy(kmeans.cluster_centers_)
-
-    initial_lengthscale = torch.pairwise_distance(f_X_sample, f_X_sample).mean()
-    # verify with
-    # initial_lengthscale2 = distance.pdist(f_X_sample, "euclidean").mean()
-
-    return initial_inducing_points, initial_lengthscale

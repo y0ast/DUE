@@ -1,0 +1,14 @@
+name: vduq
+channels:
+    - gpytorch
+    - pytorch
+    - defaults
+dependencies:
+    - python>=3.6
+    - pytorch=1.6
+    - gpytorch=1.2.1
+    - torchvision
+    - ignite
+    - tqdm
+    - numpy
+    - scikit-learn
