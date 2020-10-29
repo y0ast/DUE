@@ -18,8 +18,11 @@ class FCResNet(nn.Module):
         activation="relu",
     ):
         super().__init__()
-
-        # ResFNN architecture from google paper: https://arxiv.org/abs/2006.10108
+        """
+        ResFNN architecture
+        
+        Introduced in SNGP: https://arxiv.org/abs/2006.10108
+        """
         self.first = nn.Linear(input_dim, features)
         self.residuals = nn.ModuleList(
             [nn.Linear(features, features) for i in range(depth)]
