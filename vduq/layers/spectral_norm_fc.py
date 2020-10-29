@@ -44,8 +44,8 @@ class SpectralNormFC(SpectralNorm):
 def spectral_norm_fc(
     module,
     coeff: float,
-    name: str = "weight",
     n_power_iterations: int = 1,
+    name: str = "weight",
     eps: float = 1e-12,
     dim: int = None,
 ):
@@ -86,8 +86,8 @@ def spectral_norm_fc(
             dim = 1
         else:
             dim = 0
-    sn = SpectralNormFC.apply(module, name, coeff, n_power_iterations, dim, eps)
-    sn.coeff = coeff
-    sn.register_buffer(name + "_sigma", torch.ones(1))
+    SpectralNormFC.apply(module, name, n_power_iterations, dim, eps)
+    module.coeff = coeff
+    module.register_buffer(name + "_sigma", torch.ones(1))
 
     return module

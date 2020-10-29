@@ -11,7 +11,7 @@ from ignite.contrib.handlers import ProgressBar
 from gpytorch.mlls import VariationalELBO
 from gpytorch.likelihoods import SoftmaxLikelihood
 
-from vduq.dkl import DKL_GP, initial_values_for_GP
+from vduq.dkl import DKL_GP, GP, initial_values_for_GP
 
 from vduq.wide_resnet import WideResNet
 from datasets import get_dataset
@@ -35,6 +35,9 @@ def main(hparams):
     else:
         ard = None
 
+    if hparams.n_inducing_points is None:
+        hparams.n_inducing_points = num_classes
+
     feature_extractor = WideResNet(
         spectral_normalization=hparams.spectral_normalization,
         dropout_rate=hparams.dropout_rate,
@@ -43,14 +46,11 @@ def main(hparams):
         batchnorm_momentum=hparams.batchnorm_momentum,
     )
 
-    # TODO: get initial length scale and inducing points
-
     initial_inducing_points, initial_lengthscale = initial_values_for_GP(
         train_dataset, feature_extractor, hparams.n_inducing_points
     )
 
-    model = DKL_GP(
-        feature_extractor=feature_extractor,
+    gp = GP(
         num_classes=num_classes,
         initial_lengthscale=initial_lengthscale,
         initial_inducing_points=initial_inducing_points,
@@ -59,16 +59,18 @@ def main(hparams):
         ard=ard,
         lengthscale_prior=hparams.lengthscale_prior,
     )
+
+    model = DKL_GP(feature_extractor, gp)
     model = model.cuda()
 
     likelihood = SoftmaxLikelihood(num_classes=num_classes, mixing_weights=False)
     likelihood = likelihood.cuda()
 
-    elbo_fn = VariationalELBO(likelihood, model.gp, num_data=len(train_dataset))
+    elbo_fn = VariationalELBO(likelihood, gp, num_data=len(train_dataset))
 
     parameters = [
-        {"params": model.feature_extractor.parameters(), "lr": hparams.learning_rate},
-        {"params": model.gp.parameters(), "lr": hparams.learning_rate},
+        {"params": feature_extractor.parameters(), "lr": hparams.learning_rate},
+        {"params": gp.parameters(), "lr": hparams.learning_rate},
         {"params": likelihood.parameters(), "lr": hparams.learning_rate},
     ]
 

@@ -1,6 +1,7 @@
 import math
 import torch
 
+import gpytorch
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.kernels import RBFKernel, RQKernel, MaternKernel, ScaleKernel
 from gpytorch.means import ConstantMean
@@ -25,10 +26,10 @@ def initial_values_for_GP(train_dataset, feature_extractor, n_inducing_points):
             X_sample = X_sample.cuda()
             feature_extractor = feature_extractor.cuda()
 
-        f_X_sample = feature_extractor(X_sample).cpu().numpy()
+        f_X_sample = feature_extractor(X_sample)
 
     initial_inducing_points = _get_initial_inducing_points(
-        f_X_sample, n_inducing_points
+        f_X_sample.cpu().numpy(), n_inducing_points
     )
     initial_lengthscale = _get_initial_lengthscale(f_X_sample)
 
@@ -41,24 +42,21 @@ def _get_initial_inducing_points(f_X_sample, n_inducing_points):
     kmeans = cluster.MiniBatchKMeans(
         n_clusters=n_inducing_points, batch_size=n_inducing_points * 10
     )
-    kmeans.fit(f_X_sample.numpy())
+    kmeans.fit(f_X_sample)
     initial_inducing_points = torch.from_numpy(kmeans.cluster_centers_)
 
     return initial_inducing_points
 
 
 def _get_initial_lengthscale(f_X_sample):
-    initial_lengthscale = torch.pairwise_distance(f_X_sample, f_X_sample).mean()
-    # verify with
-    # initial_lengthscale2 = distance.pdist(f_X_sample, "euclidean").mean()
+    initial_lengthscale = torch.pdist(f_X_sample).mean()
 
-    return initial_lengthscale
+    return initial_lengthscale.cpu()
 
 
-class DKL_GP(ApproximateGP):
+class GP(ApproximateGP):
     def __init__(
         self,
-        feature_extractor,
         num_classes,
         initial_lengthscale,
         initial_inducing_points,
@@ -67,8 +65,6 @@ class DKL_GP(ApproximateGP):
         ard=None,
         lengthscale_prior=False,
     ):
-        self.feature_extractor = feature_extractor
-
         n_inducing_points = initial_inducing_points.shape[0]
         if separate_inducing_points:
             initial_inducing_points = initial_inducing_points.repeat(num_classes, 1, 1)
@@ -125,10 +121,8 @@ class DKL_GP(ApproximateGP):
         self.covar_module = ScaleKernel(kernel, batch_shape=batch_shape)
 
     def forward(self, x):
-        features = self.feature_extractor(x)
-
-        mean = self.mean_module(features)
-        covar = self.covar_module(features)
+        mean = self.mean_module(x)
+        covar = self.covar_module(x)
 
         return MultivariateNormal(mean, covar)
 
@@ -137,3 +131,15 @@ class DKL_GP(ApproximateGP):
         for name, param in self.named_parameters():
             if "inducing_points" in name:
                 return param
+
+
+class DKL_GP(gpytorch.Module):
+    def __init__(self, feature_extractor, gp):
+        super().__init__()
+
+        self.feature_extractor = feature_extractor
+        self.gp = gp
+
+    def forward(self, x):
+        features = self.feature_extractor(x)
+        return self.gp(features)

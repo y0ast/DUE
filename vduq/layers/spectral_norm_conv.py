@@ -137,8 +137,6 @@ def spectral_norm_conv(
     """
 
     input_dim_4d = (1, input_dim[0], input_dim[1], input_dim[2])
-    sn = SpectralNormConv.apply(
-        module, coeff, input_dim_4d, name, n_power_iterations, eps
-    )
+    SpectralNormConv.apply(module, coeff, input_dim_4d, name, n_power_iterations, eps)
 
     return module
