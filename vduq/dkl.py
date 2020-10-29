@@ -135,6 +135,10 @@ class GP(ApproximateGP):
 
 class DKL_GP(gpytorch.Module):
     def __init__(self, feature_extractor, gp):
+        """
+        This class is necessary because ApproximateGP (above) does some magic on the
+        forward method and is therefore not compatible with the feature_extractor
+        """
         super().__init__()
 
         self.feature_extractor = feature_extractor

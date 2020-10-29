@@ -12,11 +12,11 @@ from gpytorch.mlls import VariationalELBO
 from gpytorch.likelihoods import SoftmaxLikelihood
 
 from vduq.dkl import DKL_GP, GP, initial_values_for_GP
-
 from vduq.wide_resnet import WideResNet
-from datasets import get_dataset
-from evaluate_ood import get_ood_metrics
-from utils import get_results_directory, Hyperparameters
+
+from lib.datasets import get_dataset
+from lib.evaluate_ood import get_ood_metrics
+from lib.utils import get_results_directory, Hyperparameters
 
 
 def main(hparams):
