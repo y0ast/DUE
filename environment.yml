@@ -5,10 +5,13 @@ channels:
     - defaults
 dependencies:
     - python>=3.6
-    - pytorch=1.6
-    - gpytorch=1.2.1
+    - gpytorch>=1.2.1
+    - pytorch
     - torchvision
     - ignite
+    - tensorboard
     - tqdm
     - numpy
     - scikit-learn
+    - matplotlib
+    - seaborn
