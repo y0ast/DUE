@@ -60,7 +60,7 @@ class GP(ApproximateGP):
         num_classes,
         initial_lengthscale,
         initial_inducing_points,
-        separate_inducing_points,
+        separate_inducing_points=False,
         kernel="RBF",
         ard=None,
         lengthscale_prior=False,
@@ -69,12 +69,10 @@ class GP(ApproximateGP):
         if separate_inducing_points:
             initial_inducing_points = initial_inducing_points.repeat(num_classes, 1, 1)
 
-        batch_shape = torch.Size([num_classes])
-        # See if we can get rid of this
-        # if num_classes > 1:
-        #     batch_shape = torch.Size([num_classes])
-        # else:
-        #     batch_shape = torch.Size([])
+        if num_classes > 1:
+            batch_shape = torch.Size([num_classes])
+        else:
+            batch_shape = torch.Size([])
 
         variational_distribution = CholeskyVariationalDistribution(
             n_inducing_points, batch_shape=batch_shape
