@@ -2,7 +2,6 @@ from datetime import datetime
 import json
 import pathlib
 import random
-import os
 
 import torch
 import numpy as np
@@ -18,10 +17,7 @@ def set_seed(seed):
     return seed
 
 
-def get_results_directory(
-        name,
-        stamp=True
-):
+def get_results_directory(name, stamp=True):
     timestamp = datetime.now().strftime("%Y-%m-%d-%A-%H-%M-%S")
 
     results_dir = pathlib.Path("runs")
@@ -60,4 +56,4 @@ class Hyperparameters:
         return hasattr(self, k)
 
     def __str__(self):
-        r
+        return f"Hyperparameters:\n {self.to_json()}"

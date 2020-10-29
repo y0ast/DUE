@@ -13,7 +13,7 @@ from gpytorch.likelihoods import SoftmaxLikelihood
 
 from vduq.dkl import DKL_GP, initial_values_for_GP
 
-from wide_resnet import WideResNet
+from vduq.wide_resnet import WideResNet
 from datasets import get_dataset
 from evaluate_ood import get_ood_metrics
 from utils import get_results_directory, Hyperparameters
@@ -307,7 +307,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--output_dir", type=str, help="Specify output directory")
-    parser.add_argument("--data_root", type=str, help="Specify data directory")
+    parser.add_argument(
+        "--data_root", default="./data", type=str, help="Specify data directory"
+    )
 
     args = parser.parse_args()
     hparams = Hyperparameters(**vars(args))

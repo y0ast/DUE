@@ -95,9 +95,9 @@ class WideResNet(nn.Module):
                 wrapped_conv = spectral_norm_fc(conv, coeff, n_power_iterations)
             else:
                 # Otherwise use spectral norm conv, with loose bound
-                shapes = (in_c, input_size, input_size)
+                input_dim = (in_c, input_size, input_size)
                 wrapped_conv = spectral_norm_conv(
-                    conv, coeff, shapes, n_power_iterations
+                    conv, coeff, input_dim, n_power_iterations
                 )
 
             return wrapped_conv
@@ -109,7 +109,7 @@ class WideResNet(nn.Module):
 
         nStages = [16, 16 * k, 32 * k, 64 * k]
         strides = [1, 1, 2, 2]
-        input_sizes = 32 / np.cumprod(strides)
+        input_sizes = 32 // np.cumprod(strides)
 
         self.conv1 = wrapped_conv(input_sizes[0], 3, nStages[0], 3, strides[0])
         self.layer1 = self._wide_layer(nStages[0:2], n, strides[1], input_sizes[1])

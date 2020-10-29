@@ -9,9 +9,14 @@ Based on: Regularisation of Neural Networks by Enforcing Lipschitz Continuity
 """
 import torch
 from torch.nn.functional import normalize, conv_transpose2d, conv2d
+from torch.nn.utils.spectral_norm import (
+    SpectralNorm,
+    SpectralNormLoadStateDictPreHook,
+    SpectralNormStateDictHook,
+)
 
 
-class SpectralNormConv(torch.nn.utils.spectral_norm.SpectralNorm):
+class SpectralNormConv(SpectralNorm):
     def compute_weight(self, module, do_power_iteration: bool) -> torch.Tensor:
         weight = getattr(module, self.name + "_orig")
         u = getattr(module, self.name + "_u")
@@ -60,14 +65,54 @@ class SpectralNormConv(torch.nn.utils.spectral_norm.SpectralNorm):
 
         return weight
 
+    @staticmethod
+    def apply(module, coeff, input_dim, name, n_power_iterations, eps):
+        for k, hook in module._forward_pre_hooks.items():
+            if isinstance(hook, SpectralNormConv) and hook.name == name:
+                raise RuntimeError(
+                    "Cannot register two spectral_norm hooks on "
+                    "the same parameter {}".format(name)
+                )
+
+        fn = SpectralNormConv(name, n_power_iterations, eps=eps)
+        fn.coeff = coeff
+        fn.input_dim = input_dim
+        weight = module._parameters[name]
+
+        with torch.no_grad():
+            num_input_dim = input_dim[0] * input_dim[1] * input_dim[2] * input_dim[3]
+            v = normalize(torch.randn(num_input_dim), dim=0, eps=fn.eps)
+
+            # get settings from conv-module (for transposed convolution)
+            stride = module.stride
+            padding = module.padding
+            # forward call to infer the shape
+            u = conv2d(
+                v.view(input_dim), weight, stride=stride, padding=padding, bias=None
+            )
+            fn.out_shape = u.shape
+            num_output_dim = (
+                fn.out_shape[0] * fn.out_shape[1] * fn.out_shape[2] * fn.out_shape[3]
+            )
+            # overwrite u with random init
+            u = normalize(torch.randn(num_output_dim), dim=0, eps=fn.eps)
+
+        delattr(module, fn.name)
+        module.register_parameter(fn.name + "_orig", weight)
+        setattr(module, fn.name, weight.data)
+        module.register_buffer(fn.name + "_u", u)
+        module.register_buffer(fn.name + "_v", v)
+        module.register_buffer(fn.name + "_sigma", torch.ones(1).to(weight.device))
+
+        module.register_forward_pre_hook(fn)
+
+        module._register_state_dict_hook(SpectralNormStateDictHook(fn))
+        module._register_load_state_dict_pre_hook(SpectralNormLoadStateDictPreHook(fn))
+        return fn
+
 
 def spectral_norm_conv(
-    module,
-    input_dim: tuple(int, int, int),
-    coeff: float,
-    n_power_iterations: int = 1,
-    name: str = "weight",
-    eps: float = 1e-12,
+    module, coeff, input_dim, n_power_iterations=1, name="weight", eps=1e-12,
 ):
     """
     Applies spectral normalization to Convolutions with flexible max norm
@@ -95,8 +140,5 @@ def spectral_norm_conv(
     sn = SpectralNormConv.apply(
         module, coeff, input_dim_4d, name, n_power_iterations, eps
     )
-    sn.coeff = coeff
-    sn.input_dim = input_dim
-    sn.register_buffer(name + "_sigma", torch.ones(1))
 
     return module

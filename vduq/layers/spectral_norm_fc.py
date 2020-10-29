@@ -5,9 +5,10 @@ with additional variable `coeff` or max spectral norm.
 """
 import torch
 from torch.nn.functional import normalize
+from torch.nn.utils.spectral_norm import SpectralNorm
 
 
-class SpectralNormFC(torch.nn.util.spectral_norm.SpectralNorm):
+class SpectralNormFC(SpectralNorm):
     def compute_weight(self, module, do_power_iteration: bool) -> torch.Tensor:
         weight = getattr(module, self.name + "_orig")
         u = getattr(module, self.name + "_u")
