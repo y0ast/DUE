@@ -3,7 +3,7 @@ import torch
 import gpytorch
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 
-from datasets import get_dataset
+from .datasets import get_dataset
 
 
 def prepare_ood_datasets(true_dataset, ood_dataset):
