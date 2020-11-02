@@ -20,25 +20,25 @@ from lib.utils import get_results_directory, Hyperparameters, set_seed
 
 
 def main(hparams):
-    hparams.seed = set_seed(hparams.seed)
-
     results_dir = get_results_directory(hparams.output_dir)
     writer = SummaryWriter(log_dir=str(results_dir))
 
-    print(f"Training with {hparams}")
-    hparams.save(results_dir / "hparams.json")
-
     ds = get_dataset(hparams.dataset, root=hparams.data_root)
     input_size, num_classes, train_dataset, test_dataset = ds
+
+    hparams.seed = set_seed(hparams.seed)
+
+    if hparams.n_inducing_points is None:
+        hparams.n_inducing_points = num_classes
+
+    print(f"Training with {hparams}")
+    hparams.save(results_dir / "hparams.json")
 
     if hparams.ard:
         # Hardcoded to WRN output size
         ard = 640
     else:
         ard = None
-
-    if hparams.n_inducing_points is None:
-        hparams.n_inducing_points = num_classes
 
     feature_extractor = WideResNet(
         spectral_normalization=hparams.spectral_normalization,
@@ -250,7 +250,7 @@ if __name__ == "__main__":
         "--batchnorm_momentum",
         type=float,
         default=0.01,
-        help="Batchnorm momentum (higher if using spectral batchnorm, e.g. PyTorch default 0.1)",
+        help="Batchnorm momentum (lower if not spectral batchnorm, e.g. PyTorch 0.1)",
     )
 
     parser.add_argument("--weight_decay", type=float, default=5e-4, help="Weight decay")
