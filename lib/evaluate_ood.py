@@ -55,9 +55,9 @@ def loop_over_dataloader(model, likelihood, dataloader):
     return scores, accuracies
 
 
-def get_ood_metrics(in_dataset, out_dataset, model, likelihood=None):
-    _, _, _, in_dataset = get_dataset(in_dataset)
-    _, _, _, out_dataset = get_dataset(out_dataset)
+def get_ood_metrics(in_dataset, out_dataset, model, likelihood=None, root="./"):
+    _, _, _, in_dataset = get_dataset(in_dataset, root=root)
+    _, _, _, out_dataset = get_dataset(out_dataset, root=root)
 
     dataloader, anomaly_targets = prepare_ood_datasets(in_dataset, out_dataset)
 

@@ -16,10 +16,12 @@ from vduq.wide_resnet import WideResNet
 
 from lib.datasets import get_dataset
 from lib.evaluate_ood import get_ood_metrics
-from lib.utils import get_results_directory, Hyperparameters
+from lib.utils import get_results_directory, Hyperparameters, set_seed
 
 
 def main(hparams):
+    hparams.seed = set_seed(hparams.seed)
+
     results_dir = get_results_directory(hparams.output_dir)
     writer = SummaryWriter(log_dir=str(results_dir))
 
@@ -174,7 +176,9 @@ def main(hparams):
                 )
 
         if trainer.state.epoch > 150 and trainer.state.epoch % 5 == 0:
-            _, auroc, aupr = get_ood_metrics(hparams.dataset, "SVHN", model, likelihood)
+            _, auroc, aupr = get_ood_metrics(
+                hparams.dataset, "SVHN", model, likelihood, hparams.data_root
+            )
             print(f"OoD Metrics -  AUROC: {auroc}, AUPR: {aupr}")
             writer.add_scalar("OoD/auroc", auroc, trainer.state.epoch)
             writer.add_scalar("OoD/auprc", aupr, trainer.state.epoch)
@@ -215,7 +219,9 @@ def main(hparams):
     results["test_accuracy"] = test_acc
     results["test_elbo"] = test_elbo
 
-    _, auroc, aupr = get_ood_metrics(hparams.dataset, "SVHN", model, likelihood)
+    _, auroc, aupr = get_ood_metrics(
+        hparams.dataset, "SVHN", model, likelihood, hparams.data_root
+    )
     results["auroc_ood_svhn"] = auroc
     results["aupr_ood_svhn"] = aupr
 
@@ -243,8 +249,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batchnorm_momentum",
         type=float,
-        default=0.1,
-        help="Batchnorm momentum (lower if using spectral batchnorm, e.g. 0.01)",
+        default=0.01,
+        help="Batchnorm momentum (higher if using spectral batchnorm, e.g. PyTorch default 0.1)",
     )
 
     parser.add_argument("--weight_decay", type=float, default=5e-4, help="Weight decay")
@@ -308,7 +314,9 @@ if __name__ == "__main__":
         "--n_power_iterations", default=1, type=int, help="Number of power iterations"
     )
 
-    parser.add_argument("--output_dir", type=str, help="Specify output directory")
+    parser.add_argument(
+        "--output_dir", default="./default", type=str, help="Specify output directory"
+    )
     parser.add_argument(
         "--data_root", default="./data", type=str, help="Specify data directory"
     )

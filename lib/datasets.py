@@ -1,6 +1,3 @@
-import torch
-import numpy as np
-
 from torch.utils import data
 from torchvision import datasets, transforms
 
