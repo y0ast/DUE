@@ -5,22 +5,21 @@ with additional variable `coeff` or max spectral norm.
 """
 import torch
 from torch.nn.functional import normalize
-from torch.nn.utils.spectral_norm import SpectralNorm, SpectralNormLoadStateDictPreHook, SpectralNormStateDictHook
+from torch.nn.utils.spectral_norm import (
+    SpectralNorm,
+    SpectralNormLoadStateDictPreHook,
+    SpectralNormStateDictHook,
+)
 from torch import nn
 
 
 class SpectralNormFC(SpectralNorm):
-    def __init__(self, name: str = "weight", n_power_iterations: int = 1, dim: int = 0, eps: float = 1e-12, coeff: float = 0.9) -> None:
-        super(SpectralNormFC, self).__init__(
-            name, n_power_iterations, dim, eps)
-        self.coeff = coeff
-
     def compute_weight(self, module, do_power_iteration: bool) -> torch.Tensor:
         weight = getattr(module, self.name + "_orig")
         u = getattr(module, self.name + "_u")
         v = getattr(module, self.name + "_v")
         weight_mat = self.reshape_weight_to_matrix(weight)
-        
+
         if do_power_iteration:
             with torch.no_grad():
                 for _ in range(self.n_power_iterations):
@@ -42,18 +41,29 @@ class SpectralNormFC(SpectralNorm):
         weight = weight / factor
 
         # for logging
-        self.sigma = sigma.detach()
+        self.sigma.copy_(sigma.detach())
 
         return weight
 
     @staticmethod
-    def apply(module: nn.Module, name: str, n_power_iterations: int, dim: int, eps: float, coeff: float) -> 'SpectralNormFC':
+    def apply(
+        module: nn.Module,
+        coeff: float,
+        name: str,
+        n_power_iterations: int,
+        dim: int,
+        eps: float,
+    ) -> "SpectralNormFC":
         for k, hook in module._forward_pre_hooks.items():
             if isinstance(hook, SpectralNorm) and hook.name == name:
-                raise RuntimeError("Cannot register two spectral_norm hooks on "
-                                   "the same parameter {}".format(name))
+                raise RuntimeError(
+                    "Cannot register two spectral_norm hooks on "
+                    "the same parameter {}".format(name)
+                )
 
-        fn = SpectralNormFC(name, n_power_iterations, dim, eps, coeff)
+        fn = SpectralNormFC(name, n_power_iterations, dim, eps)
+        fn.coeff = coeff
+
         weight = module._parameters[name]
         with torch.no_grad():
             weight_mat = fn.reshape_weight_to_matrix(weight)
@@ -71,12 +81,13 @@ class SpectralNormFC(SpectralNorm):
         setattr(module, fn.name, weight.data)
         module.register_buffer(fn.name + "_u", u)
         module.register_buffer(fn.name + "_v", v)
+        module.register_buffer(name + "_sigma", torch.ones(1))
 
         module.register_forward_pre_hook(fn)
         module._register_state_dict_hook(SpectralNormStateDictHook(fn))
-        module._register_load_state_dict_pre_hook(
-            SpectralNormLoadStateDictPreHook(fn))
+        module._register_load_state_dict_pre_hook(SpectralNormLoadStateDictPreHook(fn))
         return fn
+
 
 def spectral_norm_fc(
     module,
@@ -113,15 +124,15 @@ def spectral_norm_fc(
     """
     if dim is None:
         if isinstance(
-            module, 
+            module,
             (
                 torch.nn.ConvTranspose1d,
                 torch.nn.ConvTranspose2d,
                 torch.nn.ConvTranspose3d,
             ),
-            ):
+        ):
             dim = 1
         else:
             dim = 0
-    SpectralNormFC.apply(module, name, n_power_iterations, dim, eps, coeff)
+    SpectralNormFC.apply(module, coeff, name, n_power_iterations, dim, eps)
     return module
