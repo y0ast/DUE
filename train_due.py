@@ -135,8 +135,8 @@ def main(hparams):
     metric = Accuracy(output_transform=output_transform)
     metric.attach(evaluator, "accuracy")
 
-    metric = Loss(lambda y_pred, y: -elbo_fn(y_pred, y))
-    metric.attach(evaluator, "elbo")
+    metric = Loss(lambda y_pred, y: -likelihood.expected_log_prob(y, y_pred).mean())
+    metric.attach(evaluator, "nll")
 
     kwargs = {"num_workers": 4, "pin_memory": True}
 
@@ -158,7 +158,7 @@ def main(hparams):
         elbo = metrics["elbo"]
 
         print(f"Train - Epoch: {trainer.state.epoch} ELBO: {elbo:.2f} ")
-        writer.add_scalar("Likelihood/train", elbo, trainer.state.epoch)
+        writer.add_scalar("ELBO/train", elbo, trainer.state.epoch)
 
         if hparams.spectral_normalization:
             for name, layer in model.feature_extractor.named_modules():
@@ -186,15 +186,15 @@ def main(hparams):
         evaluator.run(test_loader)
         metrics = evaluator.state.metrics
         acc = metrics["accuracy"]
-        elbo = metrics["elbo"]
+        nll = metrics["nll"]
 
         print(
             f"Test - Epoch: {trainer.state.epoch} "
             f"Acc: {acc:.4f} "
-            f"ELBO: {elbo:.2f} "
+            f"NLL: {nll:.2f} "
         )
 
-        writer.add_scalar("Likelihood/test", elbo, trainer.state.epoch)
+        writer.add_scalar("NLL/test", nll, trainer.state.epoch)
         writer.add_scalar("Accuracy/test", acc, trainer.state.epoch)
 
         scheduler.step()
@@ -207,17 +207,11 @@ def main(hparams):
     # Done training - time to evaluate
     results = {}
 
-    evaluator.run(train_loader)
-    train_acc = evaluator.state.metrics["accuracy"]
-    train_elbo = evaluator.state.metrics["elbo"]
-    results["train_accuracy"] = train_acc
-    results["train_elbo"] = train_elbo
-
     evaluator.run(test_loader)
     test_acc = evaluator.state.metrics["accuracy"]
-    test_elbo = evaluator.state.metrics["elbo"]
+    test_nll = evaluator.state.metrics["nll"]
     results["test_accuracy"] = test_acc
-    results["test_elbo"] = test_elbo
+    results["test_nll"] = test_nll
 
     _, auroc, aupr = get_ood_metrics(
         hparams.dataset, "SVHN", model, likelihood, hparams.data_root
@@ -225,7 +219,7 @@ def main(hparams):
     results["auroc_ood_svhn"] = auroc
     results["aupr_ood_svhn"] = aupr
 
-    print(f"Test - Accuracy {results['test_accuracy']:.4f}")
+    print(f"Final accuracy {results['test_accuracy']:.4f}")
 
     results_json = json.dumps(results, indent=4, sort_keys=True)
     (results_dir / "results.json").write_text(results_json)
@@ -244,7 +238,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--learning_rate", type=float, default=0.1, help="Learning rate",
+        "--learning_rate",
+        type=float,
+        default=0.1,
+        help="Learning rate",
     )
     parser.add_argument(
         "--batchnorm_momentum",

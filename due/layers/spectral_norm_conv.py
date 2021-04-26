@@ -66,6 +66,16 @@ class SpectralNormConv(SpectralNorm):
 
         return weight
 
+    def __call__(self, module, inputs):
+        assert (
+            inputs[0].shape[1:] == self.input_dim[1:]
+        ), "Input dims don't match actual input"
+        setattr(
+            module,
+            self.name,
+            self.compute_weight(module, do_power_iteration=module.training),
+        )
+
     @staticmethod
     def apply(module, coeff, input_dim, name, n_power_iterations, eps):
         for k, hook in module._forward_pre_hooks.items():
@@ -113,7 +123,12 @@ class SpectralNormConv(SpectralNorm):
 
 
 def spectral_norm_conv(
-    module, coeff, input_dim, n_power_iterations=1, name="weight", eps=1e-12,
+    module,
+    coeff,
+    input_dim,
+    n_power_iterations=1,
+    name="weight",
+    eps=1e-12,
 ):
     """
     Applies spectral normalization to Convolutions with flexible max norm
@@ -137,7 +152,7 @@ def spectral_norm_conv(
 
     """
 
-    input_dim_4d = (1, input_dim[0], input_dim[1], input_dim[2])
+    input_dim_4d = torch.Size([1, input_dim[0], input_dim[1], input_dim[2]])
     SpectralNormConv.apply(module, coeff, input_dim_4d, name, n_power_iterations, eps)
 
     return module
