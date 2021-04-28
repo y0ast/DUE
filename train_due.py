@@ -41,7 +41,8 @@ def main(hparams):
         ard = None
 
     feature_extractor = WideResNet(
-        spectral_normalization=hparams.spectral_normalization,
+        input_size,
+        hparams.spectral_normalization,
         dropout_rate=hparams.dropout_rate,
         coeff=hparams.coeff,
         n_power_iterations=hparams.n_power_iterations,
@@ -238,16 +239,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--learning_rate",
-        type=float,
-        default=0.1,
-        help="Learning rate",
+        "--learning_rate", type=float, default=0.1, help="Learning rate",
     )
     parser.add_argument(
         "--batchnorm_momentum",
         type=float,
         default=0.01,
-        help="Batchnorm momentum (lower if not spectral batchnorm, e.g. PyTorch 0.1)",
+        help="Batchnorm momentum (higher if not spectral batchnorm, e.g. PyTorch 0.1)",
     )
 
     parser.add_argument("--weight_decay", type=float, default=5e-4, help="Weight decay")

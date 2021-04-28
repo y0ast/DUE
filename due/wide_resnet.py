@@ -1,8 +1,6 @@
 # Follows:
 # https://github.com/szagoruyko/wide-residual-networks/tree/master/pytorch
 
-import numpy as np
-
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -23,9 +21,10 @@ class WideBasic(nn.Module):
         super().__init__()
         self.bn1 = wrapped_batchnorm(in_c)
         self.conv1 = wrapped_conv(input_size, in_c, out_c, 3, stride)
+        input_size = (input_size - 1) // stride + 1
 
         self.bn2 = wrapped_batchnorm(out_c)
-        self.conv2 = wrapped_conv(input_size // stride, out_c, out_c, 3, 1)
+        self.conv2 = wrapped_conv(input_size, out_c, out_c, 3, 1)
 
         self.dropout_rate = dropout_rate
         if dropout_rate > 0:
@@ -55,6 +54,7 @@ class WideBasic(nn.Module):
 class WideResNet(nn.Module):
     def __init__(
         self,
+        input_size,
         spectral_normalization,
         depth=28,
         widen_factor=10,
@@ -109,12 +109,17 @@ class WideResNet(nn.Module):
 
         nStages = [16, 16 * k, 32 * k, 64 * k]
         strides = [1, 1, 2, 2]
-        input_sizes = 32 // np.cumprod(strides)
 
-        self.conv1 = wrapped_conv(input_sizes[0], 3, nStages[0], 3, strides[0])
-        self.layer1 = self._wide_layer(nStages[0:2], n, strides[1], input_sizes[0])
-        self.layer2 = self._wide_layer(nStages[1:3], n, strides[2], input_sizes[1])
-        self.layer3 = self._wide_layer(nStages[2:4], n, strides[3], input_sizes[2])
+        self.conv1 = wrapped_conv(input_size, 3, nStages[0], 3, strides[0])
+        self.layer1, input_size = self._wide_layer(
+            nStages[0:2], n, strides[1], input_size
+        )
+        self.layer2, input_size = self._wide_layer(
+            nStages[1:3], n, strides[2], input_size
+        )
+        self.layer3, input_size = self._wide_layer(
+            nStages[2:4], n, strides[3], input_size
+        )
 
         self.bn1 = self.wrapped_bn(nStages[3])
 
@@ -148,9 +153,9 @@ class WideResNet(nn.Module):
                 )
             )
             in_c = out_c
-            input_size = input_size // stride
+            input_size = (input_size - 1) // stride + 1
 
-        return nn.Sequential(*layers)
+        return nn.Sequential(*layers), input_size
 
     def forward(self, x):
         out = self.conv1(x)
@@ -158,7 +163,7 @@ class WideResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = F.relu(self.bn1(out))
-        out = F.avg_pool2d(out, 8)
+        out = F.avg_pool2d(out, out.shape[-1])
         out = out.flatten(1)
 
         if self.num_classes is not None:

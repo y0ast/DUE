@@ -28,13 +28,18 @@ class SpectralNormConv(SpectralNorm):
 
         if do_power_iteration:
             with torch.no_grad():
+                output_padding = 0
+                if stride[0] > 1:
+                    # Note: the below does not generalize to stride > 2
+                    output_padding = 1 - self.input_dim[-1] % 2
+
                 for _ in range(self.n_power_iterations):
                     v_s = conv_transpose2d(
-                        u.view(self.out_shape),
+                        u.view(self.output_dim),
                         weight,
                         stride=stride,
                         padding=padding,
-                        output_padding=(stride[0] - 1, stride[1] - 1),
+                        output_padding=output_padding,
                     )
                     v = normalize(v_s.view(-1), dim=0, eps=self.eps, out=v)
 
@@ -101,9 +106,12 @@ class SpectralNormConv(SpectralNorm):
             u = conv2d(
                 v.view(input_dim), weight, stride=stride, padding=padding, bias=None
             )
-            fn.out_shape = u.shape
+            fn.output_dim = u.shape
             num_output_dim = (
-                fn.out_shape[0] * fn.out_shape[1] * fn.out_shape[2] * fn.out_shape[3]
+                fn.output_dim[0]
+                * fn.output_dim[1]
+                * fn.output_dim[2]
+                * fn.output_dim[3]
             )
             # overwrite u with random init
             u = normalize(torch.randn(num_output_dim), dim=0, eps=fn.eps)
@@ -123,12 +131,7 @@ class SpectralNormConv(SpectralNorm):
 
 
 def spectral_norm_conv(
-    module,
-    coeff,
-    input_dim,
-    n_power_iterations=1,
-    name="weight",
-    eps=1e-12,
+    module, coeff, input_dim, n_power_iterations=1, name="weight", eps=1e-12,
 ):
     """
     Applies spectral normalization to Convolutions with flexible max norm
