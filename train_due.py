@@ -34,12 +34,6 @@ def main(hparams):
     print(f"Training with {hparams}")
     hparams.save(results_dir / "hparams.json")
 
-    if hparams.ard:
-        # Hardcoded to WRN output size
-        ard = 640
-    else:
-        ard = None
-
     feature_extractor = WideResNet(
         input_size,
         hparams.spectral_normalization,
@@ -57,10 +51,7 @@ def main(hparams):
         num_outputs=num_classes,
         initial_lengthscale=initial_lengthscale,
         initial_inducing_points=initial_inducing_points,
-        separate_inducing_points=hparams.separate_inducing_points,
         kernel=hparams.kernel,
-        ard=ard,
-        lengthscale_prior=hparams.lengthscale_prior,
     )
 
     model = DKL_GP(feature_extractor, gp)
@@ -239,7 +230,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--learning_rate", type=float, default=0.1, help="Learning rate",
+        "--learning_rate",
+        type=float,
+        default=0.1,
+        help="Learning rate",
     )
     parser.add_argument(
         "--batchnorm_momentum",
@@ -272,27 +266,6 @@ if __name__ == "__main__":
         default=True,
         dest="spectral_normalization",
         help="Don't use spectral normalization",
-    )
-
-    parser.add_argument(
-        "--ard",
-        action="store_true",
-        default=False,
-        help="Apply Automatic Relevance Detection (ARD) in the kernel",
-    )
-
-    parser.add_argument(
-        "--separate_inducing_points",
-        action="store_true",
-        default=False,
-        help="Separate inducing points for each GP",
-    )
-
-    parser.add_argument(
-        "--lengthscale_prior",
-        action="store_true",
-        default=False,
-        help="Use prior on length scale",
     )
 
     parser.add_argument(

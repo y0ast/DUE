@@ -1,4 +1,3 @@
-import math
 import torch
 
 import gpytorch
@@ -6,7 +5,6 @@ from gpytorch.distributions import MultivariateNormal
 from gpytorch.kernels import RBFKernel, RQKernel, MaternKernel, ScaleKernel
 from gpytorch.means import ConstantMean
 from gpytorch.models import ApproximateGP
-from gpytorch.priors import SmoothedBoxPrior
 
 from gpytorch.variational import (
     CholeskyVariationalDistribution,
@@ -67,15 +65,9 @@ class GP(ApproximateGP):
         num_outputs,
         initial_lengthscale,
         initial_inducing_points,
-        separate_inducing_points=False,
         kernel="RBF",
-        ard=None,
-        lengthscale_prior=False,
     ):
         n_inducing_points = initial_inducing_points.shape[0]
-        if separate_inducing_points:
-            # Use independent inducing points per output GP
-            initial_inducing_points = initial_inducing_points.repeat(num_outputs, 1, 1)
 
         if num_outputs > 1:
             batch_shape = torch.Size([num_outputs])
@@ -97,15 +89,8 @@ class GP(ApproximateGP):
 
         super().__init__(variational_strategy)
 
-        if lengthscale_prior:
-            lengthscale_prior = SmoothedBoxPrior(math.exp(-1), math.exp(1), sigma=0.1)
-        else:
-            lengthscale_prior = None
-
         kwargs = {
-            "ard_num_dims": ard,
             "batch_shape": batch_shape,
-            "lengthscale_prior": lengthscale_prior,
         }
 
         if kernel == "RBF":
