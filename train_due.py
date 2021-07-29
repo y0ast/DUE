@@ -159,14 +159,6 @@ def main(hparams):
                         f"sigma/{name}", layer.weight_sigma, trainer.state.epoch
                     )
 
-        if not hparams.ard:
-            # Otherwise it's too much to submit to tensorboard
-            length_scales = model.gp.covar_module.base_kernel.lengthscale.squeeze()
-            for i in range(length_scales.shape[0]):
-                writer.add_scalar(
-                    f"length_scale/{i}", length_scales[i], trainer.state.epoch
-                )
-
         if trainer.state.epoch > 150 and trainer.state.epoch % 5 == 0:
             _, auroc, aupr = get_ood_metrics(
                 hparams.dataset, "SVHN", model, likelihood, hparams.data_root
