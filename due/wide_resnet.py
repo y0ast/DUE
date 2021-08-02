@@ -62,7 +62,6 @@ class WideResNet(nn.Module):
         dropout_rate=0.3,
         coeff=3,
         n_power_iterations=1,
-        batchnorm_momentum=0.1,
     ):
         super().__init__()
 
@@ -72,11 +71,9 @@ class WideResNet(nn.Module):
 
         def wrapped_bn(num_features):
             if spectral_normalization:
-                bn = SpectralBatchNorm2d(
-                    num_features, coeff, momentum=batchnorm_momentum
-                )
+                bn = SpectralBatchNorm2d(num_features, coeff)
             else:
-                bn = nn.BatchNorm2d(num_features, momentum=batchnorm_momentum)
+                bn = nn.BatchNorm2d(num_features)
 
             return bn
 

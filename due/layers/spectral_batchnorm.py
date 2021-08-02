@@ -9,8 +9,8 @@ from torch import nn
 class _SpectralBatchNorm(_NormBase):
     def __init__(
         self, num_features, coeff, eps=1e-5, momentum=0.01, affine=True
-    ):  # more momentum by default here than standard bn
-        # remove the option to not track running stats, as we want these
+    ):  # momentum is 0.01 by default instead of 0.1 of BN which alleviates noisy power iteration
+        # Code is based on torch.nn.modules._NormBase
         super(_SpectralBatchNorm, self).__init__(
             num_features, eps, momentum, affine, track_running_stats=True
         )
