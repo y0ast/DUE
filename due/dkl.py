@@ -15,7 +15,7 @@ from gpytorch.variational import (
 from sklearn import cluster
 
 
-def initial_values_for_GP(train_dataset, feature_extractor, n_inducing_points):
+def initial_values(train_dataset, feature_extractor, n_inducing_points):
     steps = 10
     idx = torch.randperm(len(train_dataset))[:1000].chunk(steps)
     f_X_samples = []
@@ -124,7 +124,7 @@ class GP(ApproximateGP):
                 return param
 
 
-class DKL_GP(gpytorch.Module):
+class DKL(gpytorch.Module):
     def __init__(self, feature_extractor, gp):
         """
         This wrapper class is necessary because ApproximateGP (above) does some magic

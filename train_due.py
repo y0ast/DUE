@@ -11,7 +11,7 @@ from ignite.contrib.handlers import ProgressBar
 from gpytorch.mlls import VariationalELBO
 from gpytorch.likelihoods import SoftmaxLikelihood
 
-from due.dkl import DKL_GP, GP, initial_values_for_GP
+from due import dkl
 from due.wide_resnet import WideResNet
 
 from lib.datasets import get_dataset
@@ -42,31 +42,34 @@ def main(hparams):
         n_power_iterations=hparams.n_power_iterations,
     )
 
-    initial_inducing_points, initial_lengthscale = initial_values_for_GP(
-        train_dataset, feature_extractor, hparams.n_inducing_points
-    )
+    if hparams.rff_laplace:
+        model = RFF_Laplace(num_outputs, lengthscale, num_features)
+    else:
+        initial_inducing_points, initial_lengthscale = dkl.initial_values(
+            train_dataset, feature_extractor, hparams.n_inducing_points
+        )
 
-    gp = GP(
-        num_outputs=num_classes,
-        initial_lengthscale=initial_lengthscale,
-        initial_inducing_points=initial_inducing_points,
-        kernel=hparams.kernel,
-    )
+        gp = dkl.GP(
+            num_outputs=num_classes,
+            initial_lengthscale=initial_lengthscale,
+            initial_inducing_points=initial_inducing_points,
+            kernel=hparams.kernel,
+        )
 
-    model = DKL_GP(feature_extractor, gp)
+        model = dkl.DKL(feature_extractor, gp)
+
+        likelihood = SoftmaxLikelihood(num_classes=num_classes, mixing_weights=False)
+        likelihood = likelihood.cuda()
+
+        loss_fn = VariationalELBO(likelihood, gp, num_data=len(train_dataset))
+
+        parameters = [
+            {"params": feature_extractor.parameters(), "lr": hparams.learning_rate},
+            {"params": gp.parameters(), "lr": hparams.learning_rate},
+            {"params": likelihood.parameters(), "lr": hparams.learning_rate},
+        ]
+
     model = model.cuda()
-
-    likelihood = SoftmaxLikelihood(num_classes=num_classes, mixing_weights=False)
-    likelihood = likelihood.cuda()
-
-    elbo_fn = VariationalELBO(likelihood, gp, num_data=len(train_dataset))
-
-    parameters = [
-        {"params": feature_extractor.parameters(), "lr": hparams.learning_rate},
-        {"params": gp.parameters(), "lr": hparams.learning_rate},
-        {"params": likelihood.parameters(), "lr": hparams.learning_rate},
-    ]
-
     optimizer = torch.optim.SGD(
         parameters, momentum=0.9, weight_decay=hparams.weight_decay
     )
@@ -87,12 +90,12 @@ def main(hparams):
         x, y = x.cuda(), y.cuda()
 
         y_pred = model(x)
-        elbo = -elbo_fn(y_pred, y)
+        loss = -loss_fn(y_pred, y)  # TODO: fix this minus sign
 
-        elbo.backward()
+        loss.backward()
         optimizer.step()
 
-        return elbo.item()
+        return loss.item()
 
     def eval_step(engine, batch):
         model.eval()
@@ -251,6 +254,12 @@ if __name__ == "__main__":
         default=True,
         dest="spectral_normalization",
         help="Don't use spectral normalization",
+    )
+
+    parser.add_argument(
+        "--rff_laplace",
+        action="store_true",
+        help="Use RFF and Laplace instead of a sparse GP",
     )
 
     parser.add_argument(
