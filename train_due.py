@@ -90,6 +90,7 @@ def main(hparams):
         loss_fn = lambda x, y: -elbo_fn(x, y)
 
     model = model.cuda()
+
     optimizer = torch.optim.SGD(
         model.parameters(),
         lr=hparams.learning_rate,
