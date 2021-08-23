@@ -61,14 +61,11 @@ def main(hparams):
 
     elbo_fn = VariationalELBO(likelihood, gp, num_data=len(train_dataset))
 
-    parameters = [
-        {"params": feature_extractor.parameters(), "lr": hparams.learning_rate},
-        {"params": gp.parameters(), "lr": hparams.learning_rate},
-        {"params": likelihood.parameters(), "lr": hparams.learning_rate},
-    ]
-
     optimizer = torch.optim.SGD(
-        parameters, momentum=0.9, weight_decay=hparams.weight_decay
+        model.parameters(),
+        lr=hparams.learning_rate,
+        momentum=0.9,
+        weight_decay=hparams.weight_decay,
     )
 
     milestones = [60, 120, 160]

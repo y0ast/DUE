@@ -26,6 +26,8 @@ def prepare_ood_datasets(true_dataset, ood_dataset):
 
 def loop_over_dataloader(model, likelihood, dataloader):
     model.eval()
+    if likelihood is not None:
+        likelihood.eval()
 
     with torch.no_grad():
         scores = []
