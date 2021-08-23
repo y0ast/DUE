@@ -2,6 +2,7 @@ import argparse
 import json
 
 import torch
+import torch.nn.functional as F
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from ignite.engine import Events, Engine
@@ -13,6 +14,7 @@ from gpytorch.likelihoods import SoftmaxLikelihood
 
 from due import dkl
 from due.wide_resnet import WideResNet
+from due.rff_laplace import Laplace
 
 from lib.datasets import get_dataset
 from lib.evaluate_ood import get_ood_metrics
@@ -43,7 +45,30 @@ def main(hparams):
     )
 
     if hparams.rff_laplace:
-        model = RFF_Laplace(num_outputs, lengthscale, num_features)
+        # Defaults from SNGP in uncertainty-baselines
+        num_deep_features = 640
+        num_gp_features = 128
+        num_random_features = 1024
+        normalize_gp_features = True
+        lengthscale = 2
+        mean_field_factor = 25
+        num_data = len(train_dataset)
+
+        model = Laplace(
+            feature_extractor,
+            num_deep_features,
+            num_gp_features,
+            normalize_gp_features,
+            num_random_features,
+            num_classes,
+            num_data,
+            hparams.batch_size,
+            mean_field_factor,
+            lengthscale,
+        )
+
+        loss_fn = F.cross_entropy
+        likelihood = None
     else:
         initial_inducing_points, initial_lengthscale = dkl.initial_values(
             train_dataset, feature_extractor, hparams.n_inducing_points
@@ -61,17 +86,15 @@ def main(hparams):
         likelihood = SoftmaxLikelihood(num_classes=num_classes, mixing_weights=False)
         likelihood = likelihood.cuda()
 
-        loss_fn = VariationalELBO(likelihood, gp, num_data=len(train_dataset))
-
-        parameters = [
-            {"params": feature_extractor.parameters(), "lr": hparams.learning_rate},
-            {"params": gp.parameters(), "lr": hparams.learning_rate},
-            {"params": likelihood.parameters(), "lr": hparams.learning_rate},
-        ]
+        elbo_fn = VariationalELBO(likelihood, gp, num_data=len(train_dataset))
+        loss_fn = lambda x, y: -elbo_fn(x, y)
 
     model = model.cuda()
     optimizer = torch.optim.SGD(
-        parameters, momentum=0.9, weight_decay=hparams.weight_decay
+        model.parameters(),
+        lr=hparams.learning_rate,
+        momentum=0.9,
+        weight_decay=hparams.weight_decay,
     )
 
     milestones = [60, 120, 160]
@@ -82,7 +105,8 @@ def main(hparams):
 
     def step(engine, batch):
         model.train()
-        likelihood.train()
+        if not hparams.rff_laplace:
+            likelihood.train()
 
         optimizer.zero_grad()
 
@@ -90,7 +114,7 @@ def main(hparams):
         x, y = x.cuda(), y.cuda()
 
         y_pred = model(x)
-        loss = -loss_fn(y_pred, y)  # TODO: fix this minus sign
+        loss = loss_fn(y_pred, y)
 
         loss.backward()
         optimizer.step()
@@ -99,7 +123,8 @@ def main(hparams):
 
     def eval_step(engine, batch):
         model.eval()
-        likelihood.eval()
+        if not hparams.rff_laplace:
+            likelihood.eval()
 
         x, y = batch
         x, y = x.cuda(), y.cuda()
@@ -113,7 +138,7 @@ def main(hparams):
     evaluator = Engine(eval_step)
 
     metric = Average()
-    metric.attach(trainer, "elbo")
+    metric.attach(trainer, "loss")
 
     def output_transform(output):
         y_pred, y = output
@@ -126,11 +151,18 @@ def main(hparams):
 
         return y_pred, y
 
+    if hparams.rff_laplace:
+        output_transform = lambda x: x  # noqa
+
     metric = Accuracy(output_transform=output_transform)
     metric.attach(evaluator, "accuracy")
 
-    metric = Loss(lambda y_pred, y: -likelihood.expected_log_prob(y, y_pred).mean())
-    metric.attach(evaluator, "nll")
+    if hparams.rff_laplace:
+        metric = Loss(F.cross_entropy)
+    else:
+        metric = Loss(lambda y_pred, y: -likelihood.expected_log_prob(y, y_pred).mean())
+
+    metric.attach(evaluator, "loss")
 
     kwargs = {"num_workers": 4, "pin_memory": True}
 
@@ -146,13 +178,25 @@ def main(hparams):
         test_dataset, batch_size=512, shuffle=False, **kwargs
     )
 
+    if hparams.rff_laplace:
+
+        @trainer.on(Events.EPOCH_STARTED)
+        def reset_precision_matrix(trainer):
+            model.reset_precision_matrix()
+
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_results(trainer):
         metrics = trainer.state.metrics
-        elbo = metrics["elbo"]
+        train_loss = metrics["loss"]
 
-        print(f"Train - Epoch: {trainer.state.epoch} ELBO: {elbo:.2f} ")
-        writer.add_scalar("ELBO/train", elbo, trainer.state.epoch)
+        result = f"Train - Epoch: {trainer.state.epoch} "
+        if hparams.rff_laplace:
+            result += f"Loss: {train_loss:.2f} "
+        else:
+            result += f"ELBO: {train_loss:.2f} "
+        print(result)
+
+        writer.add_scalar("Loss/train", train_loss, trainer.state.epoch)
 
         if hparams.spectral_normalization:
             for name, layer in model.feature_extractor.named_modules():
@@ -172,15 +216,16 @@ def main(hparams):
         evaluator.run(test_loader)
         metrics = evaluator.state.metrics
         acc = metrics["accuracy"]
-        nll = metrics["nll"]
+        test_loss = metrics["loss"]
 
-        print(
-            f"Test - Epoch: {trainer.state.epoch} "
-            f"Acc: {acc:.4f} "
-            f"NLL: {nll:.2f} "
-        )
-
-        writer.add_scalar("NLL/test", nll, trainer.state.epoch)
+        result = f"Test - Epoch: {trainer.state.epoch} "
+        if hparams.rff_laplace:
+            result += f"Loss: {test_loss:.2f} "
+        else:
+            result += f"NLL: {test_loss:.2f} "
+        result += f"Acc: {acc:.4f} "
+        print(result)
+        writer.add_scalar("Loss/test", test_loss, trainer.state.epoch)
         writer.add_scalar("Accuracy/test", acc, trainer.state.epoch)
 
         scheduler.step()
@@ -195,9 +240,9 @@ def main(hparams):
 
     evaluator.run(test_loader)
     test_acc = evaluator.state.metrics["accuracy"]
-    test_nll = evaluator.state.metrics["nll"]
+    test_loss = evaluator.state.metrics["loss"]
     results["test_accuracy"] = test_acc
-    results["test_nll"] = test_nll
+    results["test_loss"] = test_loss
 
     _, auroc, aupr = get_ood_metrics(
         hparams.dataset, "SVHN", model, likelihood, hparams.data_root

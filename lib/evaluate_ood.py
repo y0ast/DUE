@@ -1,5 +1,8 @@
 import numpy as np
+
 import torch
+import torch.nn.functional as F
+
 import gpytorch
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 
@@ -26,6 +29,8 @@ def prepare_ood_datasets(true_dataset, ood_dataset):
 
 def loop_over_dataloader(model, likelihood, dataloader):
     model.eval()
+    if likelihood is not None:
+        likelihood.eval()
 
     with torch.no_grad():
         scores = []
@@ -35,7 +40,7 @@ def loop_over_dataloader(model, likelihood, dataloader):
             target = target.cuda()
 
             if likelihood is None:
-                output = torch.stack([m(data).exp() for m in model]).mean(0)
+                output = F.softmax(model(data), dim=1)
             else:
                 with gpytorch.settings.num_likelihood_samples(32):
                     y_pred = model(data).to_data_independent_dist()
