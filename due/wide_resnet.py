@@ -55,7 +55,8 @@ class WideResNet(nn.Module):
     def __init__(
         self,
         input_size,
-        spectral_normalization,
+        spectral_conv,
+        spectral_bn,
         depth=28,
         widen_factor=10,
         num_classes=None,
@@ -70,7 +71,7 @@ class WideResNet(nn.Module):
         self.dropout_rate = dropout_rate
 
         def wrapped_bn(num_features):
-            if spectral_normalization:
+            if spectral_bn:
                 bn = SpectralBatchNorm2d(num_features, coeff)
             else:
                 bn = nn.BatchNorm2d(num_features)
@@ -84,7 +85,7 @@ class WideResNet(nn.Module):
 
             conv = nn.Conv2d(in_c, out_c, kernel_size, stride, padding, bias=False)
 
-            if not spectral_normalization:
+            if not spectral_conv:
                 return conv
 
             if kernel_size == 1:

@@ -36,7 +36,8 @@ def main(hparams):
 
     feature_extractor = WideResNet(
         input_size,
-        hparams.spectral_normalization,
+        hparams.spectral_conv,
+        hparams.spectral_bn,
         dropout_rate=hparams.dropout_rate,
         coeff=hparams.coeff,
         n_power_iterations=hparams.n_power_iterations,
@@ -148,7 +149,7 @@ def main(hparams):
         print(f"Train - Epoch: {trainer.state.epoch} ELBO: {elbo:.2f} ")
         writer.add_scalar("ELBO/train", elbo, trainer.state.epoch)
 
-        if hparams.spectral_normalization:
+        if hparams.spectral_conv:
             for name, layer in model.feature_extractor.named_modules():
                 if isinstance(layer, torch.nn.Conv2d):
                     writer.add_scalar(
@@ -243,11 +244,17 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no_spectral_normalization",
+        "--no_spectral_conv",
         action="store_false",
-        default=True,
-        dest="spectral_normalization",
-        help="Don't use spectral normalization",
+        dest="spectral_conv",
+        help="Don't use spectral normalization on the convolutions",
+    )
+
+    parser.add_argument(
+        "--no_spectral_bn",
+        action="store_false",
+        dest="spectral_bn",
+        help="Don't use spectral normalization on the batch normalization layers",
     )
 
     parser.add_argument(
