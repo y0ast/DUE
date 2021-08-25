@@ -258,7 +258,8 @@ def main(hparams):
     (results_dir / "results.json").write_text(results_json)
 
     torch.save(model.state_dict(), results_dir / "model.pt")
-    torch.save(likelihood.state_dict(), results_dir / "likelihood.pt")
+    if likelihood is not None:
+        torch.save(likelihood.state_dict(), results_dir / "likelihood.pt")
 
     writer.close()
 
