@@ -1,3 +1,7 @@
+# This implementation is based on: https://arxiv.org/abs/2006.10108
+# and implementation: https://github.com/google/edward2/blob/main/edward2/tensorflow/layers/random_feature.py
+# In particular the full data inverse that avoids momentum hyper-parameters.
+
 import math
 
 import torch
@@ -12,8 +16,10 @@ def random_ortho(n, m):
 class RandomFourierFeatures(nn.Module):
     def __init__(self, in_dim, num_random_features, lengthscale=None):
         super().__init__()
-        self.num_features = num_random_features
-        self.lengthscale = lengthscale
+        if lengthscale is None:
+            lengthscale = math.sqrt(num_random_features / 2)
+
+        self.register_buffer("lengthscale", lengthscale)
 
         if num_random_features <= in_dim:
             W = random_ortho(in_dim, num_random_features)
@@ -38,11 +44,7 @@ class RandomFourierFeatures(nn.Module):
 
     def forward(self, x):
         k = torch.cos(x @ self.W + self.b)
-
-        if self.lengthscale is None:
-            k = k / math.sqrt(self.num_features / 2)
-        else:
-            k = k / self.lengthscale
+        k = k / self.lengthscale
 
         return k
 
@@ -61,7 +63,6 @@ class Laplace(nn.Module):
         mean_field_factor,
         ridge_penalty=1.0,
         lengthscale=None,
-        likelihood="softmax",
     ):
         super().__init__()
         self.feature_extractor = feature_extractor
@@ -88,7 +89,6 @@ class Laplace(nn.Module):
         self.beta = nn.Linear(num_random_features, num_outputs)
 
         self.ridge_penalty = ridge_penalty
-        self.likelihood = likelihood
 
         self.train_batch_size = train_batch_size
         self.num_data = num_data
@@ -105,6 +105,9 @@ class Laplace(nn.Module):
         self.seen_data = torch.tensor(0)
 
     def mean_field_logits(self, logits, pred_cov):
+        # Mean-Field approximation as alternative to MC integration of Gaussian-Softmax
+        # Based on: https://arxiv.org/abs/2006.07584
+
         logits_scale = torch.sqrt(1.0 + torch.diag(pred_cov) * self.mean_field_factor)
         if self.mean_field_factor > 0:
             logits = logits / logits_scale.unsqueeze(-1)
