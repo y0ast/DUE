@@ -19,7 +19,7 @@ class RandomFourierFeatures(nn.Module):
         if lengthscale is None:
             lengthscale = math.sqrt(num_random_features / 2)
 
-        self.register_buffer("lengthscale", lengthscale)
+        self.register_buffer("lengthscale", torch.tensor(lengthscale))
 
         if num_random_features <= in_dim:
             W = random_ortho(in_dim, num_random_features)
@@ -60,7 +60,7 @@ class Laplace(nn.Module):
         num_outputs,
         num_data,
         train_batch_size,
-        mean_field_factor,
+        mean_field_factor=None,  # required for classification problems
         ridge_penalty=1.0,
         lengthscale=None,
     ):
@@ -122,7 +122,7 @@ class Laplace(nn.Module):
 
         k = self.rff(f_reduc)
 
-        logits = self.beta(k)
+        pred = self.beta(k)
 
         if self.training:
             precision_matrix_minibatch = k.t() @ k
@@ -140,6 +140,9 @@ class Laplace(nn.Module):
             # TODO: cache this for efficiency
             cov = torch.inverse(self.precision_matrix)
             pred_cov = k @ ((cov @ k.t()) * self.ridge_penalty)
-            logits = self.mean_field_logits(logits, pred_cov)
+            if self.mean_field_factor is None:
+                return pred, pred_cov
+            else:
+                pred = self.mean_field_logits(pred, pred_cov)
 
-        return logits
+        return pred

@@ -14,7 +14,7 @@ from gpytorch.likelihoods import SoftmaxLikelihood
 
 from due import dkl
 from due.wide_resnet import WideResNet
-from due.rff_laplace import Laplace
+from due.sngp import Laplace
 
 from lib.datasets import get_dataset
 from lib.evaluate_ood import get_ood_metrics
@@ -45,15 +45,16 @@ def main(hparams):
         n_power_iterations=hparams.n_power_iterations,
     )
 
-    if hparams.rff_laplace:
+    if hparams.sngp:
         # Defaults from SNGP in uncertainty-baselines
         num_deep_features = 640
         num_gp_features = 128
-        num_random_features = 1024
         normalize_gp_features = True
-        lengthscale = 2
-        mean_field_factor = 25
+        num_random_features = 1024
         num_data = len(train_dataset)
+        mean_field_factor = 25
+        ridge_penalty = 1
+        lengthscale = 2
 
         model = Laplace(
             feature_extractor,
@@ -65,6 +66,7 @@ def main(hparams):
             num_data,
             hparams.batch_size,
             mean_field_factor,
+            ridge_penalty,
             lengthscale,
         )
 
@@ -107,7 +109,7 @@ def main(hparams):
 
     def step(engine, batch):
         model.train()
-        if not hparams.rff_laplace:
+        if not hparams.sngp:
             likelihood.train()
 
         optimizer.zero_grad()
@@ -125,7 +127,7 @@ def main(hparams):
 
     def eval_step(engine, batch):
         model.eval()
-        if not hparams.rff_laplace:
+        if not hparams.sngp:
             likelihood.eval()
 
         x, y = batch
@@ -153,13 +155,13 @@ def main(hparams):
 
         return y_pred, y
 
-    if hparams.rff_laplace:
+    if hparams.sngp:
         output_transform = lambda x: x  # noqa
 
     metric = Accuracy(output_transform=output_transform)
     metric.attach(evaluator, "accuracy")
 
-    if hparams.rff_laplace:
+    if hparams.sngp:
         metric = Loss(F.cross_entropy)
     else:
         metric = Loss(lambda y_pred, y: -likelihood.expected_log_prob(y, y_pred).mean())
@@ -180,7 +182,7 @@ def main(hparams):
         test_dataset, batch_size=512, shuffle=False, **kwargs
     )
 
-    if hparams.rff_laplace:
+    if hparams.sngp:
 
         @trainer.on(Events.EPOCH_STARTED)
         def reset_precision_matrix(trainer):
@@ -192,7 +194,7 @@ def main(hparams):
         train_loss = metrics["loss"]
 
         result = f"Train - Epoch: {trainer.state.epoch} "
-        if hparams.rff_laplace:
+        if hparams.sngp:
             result += f"Loss: {train_loss:.2f} "
         else:
             result += f"ELBO: {train_loss:.2f} "
@@ -221,7 +223,7 @@ def main(hparams):
         test_loss = metrics["loss"]
 
         result = f"Test - Epoch: {trainer.state.epoch} "
-        if hparams.rff_laplace:
+        if hparams.sngp:
             result += f"Loss: {test_loss:.2f} "
         else:
             result += f"NLL: {test_loss:.2f} "
@@ -311,9 +313,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--rff_laplace",
+        "--sngp",
         action="store_true",
-        help="Use RFF and Laplace instead of a sparse GP",
+        help="Use SNGP (RFF and Laplace) instead of a DUE (sparse GP)",
     )
 
     parser.add_argument(
