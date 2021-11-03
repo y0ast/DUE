@@ -2,6 +2,7 @@ import argparse
 import json
 
 import torch
+import torch.nn.functional as F
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from ignite.engine import Events, Engine
@@ -11,8 +12,9 @@ from ignite.contrib.handlers import ProgressBar
 from gpytorch.mlls import VariationalELBO
 from gpytorch.likelihoods import SoftmaxLikelihood
 
-from due.dkl import DKL_GP, GP, initial_values_for_GP
+from due import dkl
 from due.wide_resnet import WideResNet
+from due.sngp import Laplace
 
 from lib.datasets import get_dataset
 from lib.evaluate_ood import get_ood_metrics
@@ -43,24 +45,54 @@ def main(hparams):
         n_power_iterations=hparams.n_power_iterations,
     )
 
-    initial_inducing_points, initial_lengthscale = initial_values_for_GP(
-        train_dataset, feature_extractor, hparams.n_inducing_points
-    )
+    if hparams.sngp:
+        # Defaults from SNGP in uncertainty-baselines
+        num_deep_features = 640
+        num_gp_features = 128
+        normalize_gp_features = True
+        num_random_features = 1024
+        num_data = len(train_dataset)
+        mean_field_factor = 25
+        ridge_penalty = 1
+        lengthscale = 2
 
-    gp = GP(
-        num_outputs=num_classes,
-        initial_lengthscale=initial_lengthscale,
-        initial_inducing_points=initial_inducing_points,
-        kernel=hparams.kernel,
-    )
+        model = Laplace(
+            feature_extractor,
+            num_deep_features,
+            num_gp_features,
+            normalize_gp_features,
+            num_random_features,
+            num_classes,
+            num_data,
+            hparams.batch_size,
+            mean_field_factor,
+            ridge_penalty,
+            lengthscale,
+        )
 
-    model = DKL_GP(feature_extractor, gp)
+        loss_fn = F.cross_entropy
+        likelihood = None
+    else:
+        initial_inducing_points, initial_lengthscale = dkl.initial_values(
+            train_dataset, feature_extractor, hparams.n_inducing_points
+        )
+
+        gp = dkl.GP(
+            num_outputs=num_classes,
+            initial_lengthscale=initial_lengthscale,
+            initial_inducing_points=initial_inducing_points,
+            kernel=hparams.kernel,
+        )
+
+        model = dkl.DKL(feature_extractor, gp)
+
+        likelihood = SoftmaxLikelihood(num_classes=num_classes, mixing_weights=False)
+        likelihood = likelihood.cuda()
+
+        elbo_fn = VariationalELBO(likelihood, gp, num_data=len(train_dataset))
+        loss_fn = lambda x, y: -elbo_fn(x, y)
+
     model = model.cuda()
-
-    likelihood = SoftmaxLikelihood(num_classes=num_classes, mixing_weights=False)
-    likelihood = likelihood.cuda()
-
-    elbo_fn = VariationalELBO(likelihood, gp, num_data=len(train_dataset))
 
     optimizer = torch.optim.SGD(
         model.parameters(),
@@ -77,7 +109,8 @@ def main(hparams):
 
     def step(engine, batch):
         model.train()
-        likelihood.train()
+        if not hparams.sngp:
+            likelihood.train()
 
         optimizer.zero_grad()
 
@@ -85,16 +118,17 @@ def main(hparams):
         x, y = x.cuda(), y.cuda()
 
         y_pred = model(x)
-        elbo = -elbo_fn(y_pred, y)
+        loss = loss_fn(y_pred, y)
 
-        elbo.backward()
+        loss.backward()
         optimizer.step()
 
-        return elbo.item()
+        return loss.item()
 
     def eval_step(engine, batch):
         model.eval()
-        likelihood.eval()
+        if not hparams.sngp:
+            likelihood.eval()
 
         x, y = batch
         x, y = x.cuda(), y.cuda()
@@ -108,7 +142,7 @@ def main(hparams):
     evaluator = Engine(eval_step)
 
     metric = Average()
-    metric.attach(trainer, "elbo")
+    metric.attach(trainer, "loss")
 
     def output_transform(output):
         y_pred, y = output
@@ -121,11 +155,18 @@ def main(hparams):
 
         return y_pred, y
 
+    if hparams.sngp:
+        output_transform = lambda x: x  # noqa
+
     metric = Accuracy(output_transform=output_transform)
     metric.attach(evaluator, "accuracy")
 
-    metric = Loss(lambda y_pred, y: -likelihood.expected_log_prob(y, y_pred).mean())
-    metric.attach(evaluator, "nll")
+    if hparams.sngp:
+        metric = Loss(F.cross_entropy)
+    else:
+        metric = Loss(lambda y_pred, y: -likelihood.expected_log_prob(y, y_pred).mean())
+
+    metric.attach(evaluator, "loss")
 
     kwargs = {"num_workers": 4, "pin_memory": True}
 
@@ -141,13 +182,25 @@ def main(hparams):
         test_dataset, batch_size=512, shuffle=False, **kwargs
     )
 
+    if hparams.sngp:
+
+        @trainer.on(Events.EPOCH_STARTED)
+        def reset_precision_matrix(trainer):
+            model.reset_precision_matrix()
+
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_results(trainer):
         metrics = trainer.state.metrics
-        elbo = metrics["elbo"]
+        train_loss = metrics["loss"]
 
-        print(f"Train - Epoch: {trainer.state.epoch} ELBO: {elbo:.2f} ")
-        writer.add_scalar("ELBO/train", elbo, trainer.state.epoch)
+        result = f"Train - Epoch: {trainer.state.epoch} "
+        if hparams.sngp:
+            result += f"Loss: {train_loss:.2f} "
+        else:
+            result += f"ELBO: {train_loss:.2f} "
+        print(result)
+
+        writer.add_scalar("Loss/train", train_loss, trainer.state.epoch)
 
         if hparams.spectral_conv:
             for name, layer in model.feature_extractor.named_modules():
@@ -167,15 +220,16 @@ def main(hparams):
         evaluator.run(test_loader)
         metrics = evaluator.state.metrics
         acc = metrics["accuracy"]
-        nll = metrics["nll"]
+        test_loss = metrics["loss"]
 
-        print(
-            f"Test - Epoch: {trainer.state.epoch} "
-            f"Acc: {acc:.4f} "
-            f"NLL: {nll:.2f} "
-        )
-
-        writer.add_scalar("NLL/test", nll, trainer.state.epoch)
+        result = f"Test - Epoch: {trainer.state.epoch} "
+        if hparams.sngp:
+            result += f"Loss: {test_loss:.2f} "
+        else:
+            result += f"NLL: {test_loss:.2f} "
+        result += f"Acc: {acc:.4f} "
+        print(result)
+        writer.add_scalar("Loss/test", test_loss, trainer.state.epoch)
         writer.add_scalar("Accuracy/test", acc, trainer.state.epoch)
 
         scheduler.step()
@@ -190,9 +244,9 @@ def main(hparams):
 
     evaluator.run(test_loader)
     test_acc = evaluator.state.metrics["accuracy"]
-    test_nll = evaluator.state.metrics["nll"]
+    test_loss = evaluator.state.metrics["loss"]
     results["test_accuracy"] = test_acc
-    results["test_nll"] = test_nll
+    results["test_loss"] = test_loss
 
     _, auroc, aupr = get_ood_metrics(
         hparams.dataset, "SVHN", model, likelihood, hparams.data_root
@@ -206,7 +260,8 @@ def main(hparams):
     (results_dir / "results.json").write_text(results_json)
 
     torch.save(model.state_dict(), results_dir / "model.pt")
-    torch.save(likelihood.state_dict(), results_dir / "likelihood.pt")
+    if likelihood is not None:
+        torch.save(likelihood.state_dict(), results_dir / "likelihood.pt")
 
     writer.close()
 
@@ -255,6 +310,12 @@ if __name__ == "__main__":
         action="store_false",
         dest="spectral_bn",
         help="Don't use spectral normalization on the batch normalization layers",
+    )
+
+    parser.add_argument(
+        "--sngp",
+        action="store_true",
+        help="Use SNGP (RFF and Laplace) instead of a DUE (sparse GP)",
     )
 
     parser.add_argument(
