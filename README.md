@@ -38,4 +38,4 @@ pip install --upgrade git+https://github.com/y0ast/DUE.git
 
 or clone the repo and run `python setup.py`.
 
-**Acknowledgements**: thanks to [John](https://github.com/johnryan465) for testing DUE, [Jishnu](https://github.com/omegafragger) for evaluating SNGP, and [Jeremiah](https://github.com/jereliu) for checking SNGP.
+**Acknowledgements**: Thanks to [Lewis](https://github.com/lsgos) for the RFF implementation, [John](https://github.com/johnryan465) for testing DUE, [Jishnu](https://github.com/omegafragger) for evaluating SNGP, and [Jeremiah](https://github.com/jereliu) for checking SNGP.
