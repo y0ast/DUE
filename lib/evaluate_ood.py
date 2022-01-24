@@ -41,16 +41,13 @@ def loop_over_dataloader(model, likelihood, dataloader):
 
             if likelihood is None:
                 logits = model(data)
-                num_classes = logits.shape[1]
-                # actual Dempster-Shafer Uncertainty
-                # uncertainty = num_classes/(num_classes + logits.exp().sum(dim=1))
-                # 
-                # However, this is equivalent to -logits.logsumexp(dim=1)
-                # K/(K + x) = 1/(1+x/K) is equiv 1/(1+x) is equiv 1/x is equiv -log x
-                # (when it comes to preserving ranking)
-                uncertainty = -torch.logsumexp(logits, dim=1)
-                
                 output = F.softmax(logits, dim=1)
+
+                # Dempster-Shafer uncertainty for SNGP
+                # From: https://github.com/google/uncertainty-baselines/blob/main/baselines/cifar/ood_utils.py#L22
+                num_classes = logits.shape[1]
+                belief_mass = logits.exp().sum(1)
+                uncertainty = num_classes / (belief_mass + num_classes)
             else:
                 with gpytorch.settings.num_likelihood_samples(32):
                     y_pred = model(data).to_data_independent_dist()
