@@ -40,13 +40,17 @@ def loop_over_dataloader(model, likelihood, dataloader):
             target = target.cuda()
 
             if likelihood is None:
-                output = F.softmax(model(data), dim=1)
+                logits = model(data)
+                num_classes = logits.shape[1]
+                uncertainty = num_classes/(num_classes + logits.sum(dim=1))
+                
+                output = F.softmax(logits, dim=1)
             else:
                 with gpytorch.settings.num_likelihood_samples(32):
                     y_pred = model(data).to_data_independent_dist()
                     output = likelihood(y_pred).probs.mean(0)
 
-            uncertainty = -(output * output.log()).sum(1)
+                uncertainty = -(output * output.log()).sum(1)
 
             pred = torch.argmax(output, dim=1)
             accuracy = pred.eq(target)
