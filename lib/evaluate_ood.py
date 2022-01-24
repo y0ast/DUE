@@ -40,13 +40,20 @@ def loop_over_dataloader(model, likelihood, dataloader):
             target = target.cuda()
 
             if likelihood is None:
-                output = F.softmax(model(data), dim=1)
+                logits = model(data)
+                output = F.softmax(logits, dim=1)
+
+                # Dempster-Shafer uncertainty for SNGP
+                # From: https://github.com/google/uncertainty-baselines/blob/main/baselines/cifar/ood_utils.py#L22
+                num_classes = logits.shape[1]
+                belief_mass = logits.exp().sum(1)
+                uncertainty = num_classes / (belief_mass + num_classes)
             else:
                 with gpytorch.settings.num_likelihood_samples(32):
                     y_pred = model(data).to_data_independent_dist()
                     output = likelihood(y_pred).probs.mean(0)
 
-            uncertainty = -(output * output.log()).sum(1)
+                uncertainty = -(output * output.log()).sum(1)
 
             pred = torch.argmax(output, dim=1)
             accuracy = pred.eq(target)
