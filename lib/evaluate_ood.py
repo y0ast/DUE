@@ -42,7 +42,7 @@ def loop_over_dataloader(model, likelihood, dataloader):
             if likelihood is None:
                 logits = model(data)
                 num_classes = logits.shape[1]
-                uncertainty = num_classes/(num_classes + logits.sum(dim=1))
+                uncertainty = num_classes/(num_classes + logits.exp().sum(dim=1))
                 
                 output = F.softmax(logits, dim=1)
             else:
