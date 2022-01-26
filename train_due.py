@@ -46,7 +46,7 @@ def main(hparams):
     )
 
     if hparams.sngp:
-        # Defaults from SNGP in uncertainty-baselines
+        # Defaults from SNGP on CIFAR-10 in uncertainty-baselines
         num_deep_features = 640
         num_gp_features = 128
         normalize_gp_features = True
@@ -54,7 +54,7 @@ def main(hparams):
         num_data = len(train_dataset)
         mean_field_factor = 25
         ridge_penalty = 1
-        lengthscale = 2
+        feature_scale = 2
 
         model = Laplace(
             feature_extractor,
@@ -65,9 +65,9 @@ def main(hparams):
             num_classes,
             num_data,
             hparams.batch_size,
-            mean_field_factor,
             ridge_penalty,
-            lengthscale,
+            feature_scale,
+            mean_field_factor,
         )
 
         loss_fn = F.cross_entropy

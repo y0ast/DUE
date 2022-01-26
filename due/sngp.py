@@ -1,5 +1,5 @@
 # This implementation is based on: https://arxiv.org/abs/2006.10108
-# and implementation: https://github.com/google/edward2/blob/main/edward2/tensorflow/layers/random_feature.py
+# and : https://github.com/google/edward2/blob/main/edward2/tensorflow/layers/random_feature.py
 # In particular the full data inverse that avoids momentum hyper-parameters.
 
 import math
@@ -14,12 +14,12 @@ def random_ortho(n, m):
 
 
 class RandomFourierFeatures(nn.Module):
-    def __init__(self, in_dim, num_random_features, lengthscale=None):
+    def __init__(self, in_dim, num_random_features, feature_scale=None):
         super().__init__()
-        if lengthscale is None:
-            lengthscale = math.sqrt(num_random_features / 2)
+        if feature_scale is None:
+            feature_scale = math.sqrt(num_random_features / 2)
 
-        self.register_buffer("lengthscale", torch.tensor(lengthscale))
+        self.register_buffer("feature_scale", torch.tensor(feature_scale))
 
         if num_random_features <= in_dim:
             W = random_ortho(in_dim, num_random_features)
@@ -44,7 +44,7 @@ class RandomFourierFeatures(nn.Module):
 
     def forward(self, x):
         k = torch.cos(x @ self.W + self.b)
-        k = k / self.lengthscale
+        k = k / self.feature_scale
 
         return k
 
@@ -60,13 +60,15 @@ class Laplace(nn.Module):
         num_outputs,
         num_data,
         train_batch_size,
-        mean_field_factor=None,  # required for classification problems
         ridge_penalty=1.0,
-        lengthscale=None,
+        feature_scale=None,
+        mean_field_factor=None,  # required for classification problems
     ):
         super().__init__()
         self.feature_extractor = feature_extractor
         self.mean_field_factor = mean_field_factor
+        self.ridge_penalty = ridge_penalty
+        self.train_batch_size = train_batch_size
 
         if num_gp_features > 0:
             self.num_gp_features = num_gp_features
@@ -84,25 +86,24 @@ class Laplace(nn.Module):
             self.normalize = nn.LayerNorm(num_gp_features)
 
         self.rff = RandomFourierFeatures(
-            num_gp_features, num_random_features, lengthscale
+            num_gp_features, num_random_features, feature_scale
         )
         self.beta = nn.Linear(num_random_features, num_outputs)
 
-        self.ridge_penalty = ridge_penalty
-
-        self.train_batch_size = train_batch_size
         self.num_data = num_data
         self.register_buffer("seen_data", torch.tensor(0))
 
-        precision_matrix = torch.eye(num_random_features) * self.ridge_penalty
-        self.register_buffer("precision_matrix", precision_matrix)
+        precision = torch.eye(num_random_features) * self.ridge_penalty
+        self.register_buffer("precision", precision)
+
+        self.recompute_covariance = True
+        self.register_buffer("covariance", torch.eye(num_random_features))
 
     def reset_precision_matrix(self):
-        identity = torch.eye(
-            self.precision_matrix.shape[0], device=self.precision_matrix.device
-        )
-        self.precision_matrix = identity * self.ridge_penalty
+        identity = torch.eye(self.precision.shape[0], device=self.precision.device)
+        self.precision = identity * self.ridge_penalty
         self.seen_data = torch.tensor(0)
+        self.recompute_covariance = True
 
     def mean_field_logits(self, logits, pred_cov):
         # Mean-Field approximation as alternative to MC integration of Gaussian-Softmax
@@ -125,21 +126,34 @@ class Laplace(nn.Module):
         pred = self.beta(k)
 
         if self.training:
-            precision_matrix_minibatch = k.t() @ k
-            self.precision_matrix += precision_matrix_minibatch
+            precision_minibatch = k.t() @ k
+            self.precision += precision_minibatch
             self.seen_data += x.shape[0]
+
             assert (
                 self.seen_data <= self.num_data
             ), "Did not reset precision matrix at start of epoch"
         else:
-            # TODO: this is annoying for loading the model later
             assert self.seen_data > (
                 self.num_data - self.train_batch_size
-            ), "not seen sufficient data"
+            ), "Not seen sufficient data for precision matrix"
 
-            # TODO: cache this for efficiency
-            cov = torch.inverse(self.precision_matrix)
-            pred_cov = k @ ((cov @ k.t()) * self.ridge_penalty)
+            if self.recompute_covariance:
+                with torch.no_grad():
+                    eps = 1e-7
+                    jitter = eps * torch.eye(
+                        self.precision.shape[1],
+                        device=self.precision.device,
+                    )
+                    u, info = torch.linalg.cholesky_ex(self.precision + jitter)
+                    assert (info == 0).all(), "Precision matrix inversion failed!"
+                    torch.cholesky_inverse(u, out=self.covariance)
+
+                self.recompute_covariance = False
+
+            with torch.no_grad():
+                pred_cov = k @ ((self.covariance @ k.t()) * self.ridge_penalty)
+
             if self.mean_field_factor is None:
                 return pred, pred_cov
             else:
