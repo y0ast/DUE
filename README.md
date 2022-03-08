@@ -41,4 +41,30 @@ pip install --upgrade git+https://github.com/y0ast/DUE.git
 
 Alternatively you can just copy over the components you want!
 
-**Acknowledgements**: Thanks to [Lewis](https://github.com/lsgos) for the RFF implementation, [John](https://github.com/johnryan465) for testing DUE, [Jishnu](https://github.com/omegafragger) for evaluating SNGP, and [Jeremiah](https://github.com/jereliu) for checking SNGP.
+## Citation
+
+If you use this repository, please cite:
+```
+@article{van2021on,
+  title={On Feature Collapse and Deep Kernel Learning for Single Forward Pass Uncertainty},
+  author={van Amersfoort, Joost and Smith, Lewis and Jesson, Andrew and Key, Oscar and Gal, Yarin},
+  journal={arXiv preprint arXiv:2102.11409},
+  year={2021}
+}
+```
+
+If you use the SNGP model, then please cite the original paper:
+```
+@article{liu2020simple,
+  title={Simple and principled uncertainty estimation with deterministic deep learning via distance awareness},
+  author={Liu, Jeremiah and Lin, Zi and Padhy, Shreyas and Tran, Dustin and Bedrax Weiss, Tania and Lakshminarayanan, Balaji},
+  journal={Advances in Neural Information Processing Systems},
+  volume={33},
+  pages={7498--7512},
+  year={2020}
+}
+```
+
+### Acknowledgements
+
+Thanks to [Lewis](https://github.com/lsgos) for the RFF implementation, [John](https://github.com/johnryan465) for testing DUE, [Jishnu](https://github.com/omegafragger) for evaluating SNGP, and [Jeremiah](https://github.com/jereliu) for checking SNGP.
