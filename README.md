@@ -1,8 +1,11 @@
-# Deterministic Uncertainty Estimation (DUE)
+# DUE and SNGP
 
 
-This repo contains the code for [**On Feature Collapse and Deep Kernel Learning for Single Forward Pass Uncertainty**](https://arxiv.org/abs/2102.11409).
+## Deterministic Uncertainty Estimation
+This repo contains the official code for [**On Feature Collapse and Deep Kernel Learning for Single Forward Pass Uncertainty**](https://arxiv.org/abs/2102.11409).
 
+
+## Spectral Normalized GP
 It also contains an implementation of [Simple and Principled Uncertainty Estimation with Deterministic Deep Learning via Distance Awareness](https://arxiv.org/abs/2006.10108) (or SNGP), for easy comparison.
 We only implement the exact predictive covariance version, which is both simpler and performs better than the momentum based scheme.
 
@@ -22,20 +25,20 @@ A model trained using the defaults is available from [here](https://files.joo.st
 
 A regression example is implemented in `toy_regression.ipynb`.
 
-If you want to train SNGP, simply add the flag:
+If you want to train SNGP, simply add the flag (and adjust the learning rate):
 
 ```
-python train_due.py --sngp
+python train_due.py --sngp --learning_rate 0.05
 ```
 
 ## Library
 
-If you want to use DUE in your own project, you can opt to install it using pip:
+The repository is split into a reusable library and utils only used for the specific training script. You can install the library part using pip:
 
 ```
 pip install --upgrade git+https://github.com/y0ast/DUE.git
 ```
 
-or clone the repo and run `python setup.py`.
+Alternatively you can just copy over the components you want!
 
 **Acknowledgements**: Thanks to [Lewis](https://github.com/lsgos) for the RFF implementation, [John](https://github.com/johnryan465) for testing DUE, [Jishnu](https://github.com/omegafragger) for evaluating SNGP, and [Jeremiah](https://github.com/jereliu) for checking SNGP.
