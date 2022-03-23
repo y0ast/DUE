@@ -21,7 +21,7 @@ python train_due.py
 which will automatically download the dataset (`CIFAR10` by default), and start training.
 There are several command line flags available for changing the hyper-parameters.
 
-A model trained using the defaults is available from [here](https://files.joo.st/due.pt).
+A model trained using the defaults is available from [here](https://www.cs.ox.ac.uk/people/joost.vanamersfoort/due.pt).
 
 A regression example is implemented in `toy_regression.ipynb`.
 
