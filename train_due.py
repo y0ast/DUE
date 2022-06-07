@@ -20,6 +20,9 @@ from lib.datasets import get_dataset
 from lib.evaluate_ood import get_ood_metrics
 from lib.utils import get_results_directory, Hyperparameters, set_seed
 
+# For context see: https://github.com/pytorch/pytorch/issues/47908
+torch.backends.cudnn.benchmark = True
+
 
 def main(hparams):
     results_dir = get_results_directory(hparams.output_dir)
